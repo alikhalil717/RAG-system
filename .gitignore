@@ -2,4 +2,37 @@
 *.pkz
 *.joblib
 notebooks(experiences)/dataset/
-notebooks(experiences)/embeddings.joblib
+.models/
+.collections/
+__pycache__/
+*.ipynb_checkpoints/
+*.pyc
+*.safetensors
+*.bin
+
+# Ignore large model and cache files
+.models/
+.collections/
+__pycache__/
+*.ipynb_checkpoints/
+*.pyc
+*.safetensors
+*.bin
+
+# Ignore large files
+.models/
+.collections/
+__pycache__/
+*.ipynb_checkpoints/
+*.pyc
+*.safetensors
+*.bin
+
+# Ignore large files
+.models/
+.collections/
+__pycache__/
+*.ipynb_checkpoints/
+*.pyc
+*.safetensors
+*.bin
