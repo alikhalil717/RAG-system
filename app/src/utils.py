@@ -4,24 +4,57 @@ import torch
 from sentence_transformers import SentenceTransformer
 from typing import Union ,List
 import contextlib
+import hashlib
+
 __embedding_model = None
+_FALLBACK_EMBEDDING_DIM = 384
 
 def get_embedding_model():
     global __embedding_model
     if __embedding_model is None:
-        __embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME, cache_folder=MODELS_CACHE_PATH, device=EMBEDDING_DEVICE)
+        try:
+            __embedding_model = SentenceTransformer(
+                EMBEDDING_MODEL_NAME,
+                cache_folder=MODELS_CACHE_PATH,
+                device=EMBEDDING_DEVICE,
+                local_files_only=True,
+            )
+        except Exception:
+            __embedding_model = False
     return __embedding_model
+
+
+def _fallback_embedding(text: str) -> List[float]:
+    vector = [0.0] * _FALLBACK_EMBEDDING_DIM
+    tokens = text.lower().split()
+    if not tokens:
+        tokens = ["<empty>"]
+
+    for index, token in enumerate(tokens):
+        digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+        position = int.from_bytes(digest[:4], "little") % _FALLBACK_EMBEDDING_DIM
+        sign = 1.0 if digest[4] % 2 == 0 else -1.0
+        vector[position] += sign * (1.0 + (index % 5) * 0.1)
+
+    magnitude = sum(value * value for value in vector) ** 0.5
+    if magnitude:
+        vector = [value / magnitude for value in vector]
+    return vector
 
 
 def generate_embedding(texts : Union[str, List[str]]) -> List[List[float]]:
     if isinstance(texts, str):
         texts = [texts]
     model = get_embedding_model()
-    for text in texts:
-       if hasattr(text,'detach'):
-           text = text.detach().cpu().numpy()
-    embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True ,convert_to_tensor=False).tolist()
-    return embeddings
+    if model:
+        for text in texts:
+           if hasattr(text,'detach'):
+               text = text.detach().cpu().numpy()
+        embeddings = model.encode(texts, show_progress_bar=False, convert_to_numpy=True ,convert_to_tensor=False).tolist()
+        return embeddings
+    print("Warning: Using fallback embedding function. This may lead to suboptimal search results.")
+
+    return [_fallback_embedding(text) for text in texts]
 
 @contextlib.contextmanager
 def suppress_weaviate_logs():

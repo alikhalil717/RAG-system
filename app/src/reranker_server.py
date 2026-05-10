@@ -1,13 +1,18 @@
 from flask import Flask, request, jsonify
 import logging
 from sentence_transformers import CrossEncoder
-from .config import *
-from .utils import generate_embedding
+from config import *
+from utils import generate_embedding
 
 
 print("Loading reranker model")
 global reranker
-reranker = CrossEncoder(RERANKER_MODEL_NAME, device=RERANKER_DEVICE, cache_folder=MODELS_CACHE_PATH)
+reranker = CrossEncoder(
+    RERANKER_MODEL_NAME,
+    device=RERANKER_DEVICE,
+    cache_folder=MODELS_CACHE_PATH,
+    local_files_only=True,
+)
 print("Reranker model loaded")
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
@@ -27,8 +32,10 @@ def vectorize():
         if 'text' not in data:
             return jsonify({'error': 'Missing "text" field in request body'}), 400
         texts = data['text']
-        if not isinstance(texts, list):
-            return jsonify({'error': '"text" field must be a list of strings'}), 400
+        if isinstance(texts, str):
+            texts = [texts]
+        elif not isinstance(texts, list):
+            return jsonify({'error': '"text" field must be a string or a list of strings'}), 400
         embeddings = generate_embedding(texts)
         if len(embeddings) == 1:
             embeddings = embeddings[0]

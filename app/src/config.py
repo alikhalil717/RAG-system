@@ -1,6 +1,6 @@
 import os
 import sys
-from weaviate.classes.config import DataType, Property
+from weaviate.classes.config import Configure, DataType, Property
 #  Base paths :
 
 if '__file__' in globals():
@@ -27,6 +27,19 @@ WEAVIATE_PERSISTENCE_PATH = os.path.join(BASE_DIR, ".collections")
 # Models cache directory
 MODELS_CACHE_PATH = os.path.join(BASE_DIR, "models", ".models")
 
+
+def _get_local_model_path(model_dir_name: str, default_model_name: str) -> str:
+    model_root = os.path.join(MODELS_CACHE_PATH, model_dir_name)
+    snapshots_dir = os.path.join(model_root, "snapshots")
+    if os.path.isdir(snapshots_dir):
+        snapshots = sorted(
+            entry for entry in os.listdir(snapshots_dir)
+            if os.path.isdir(os.path.join(snapshots_dir, entry))
+        )
+        if snapshots:
+            return os.path.join(snapshots_dir, snapshots[-1])
+    return default_model_name
+
 # Create directories if they don't exist
 os.makedirs(PDF_DATA_PATH, exist_ok=True)
 os.makedirs(CHUNKS_DIR, exist_ok=True)
@@ -44,7 +57,7 @@ RERANKER_INFERENCE_URL = "http://127.0.0.1:5000/"
 # Weaviate embedded environment variables
 WEAVIATE_ENV_VARS = {
     "ENABLE_API_BASED_MODULES": "true",
-    "ENABLE_MODULES": "text2vec-transformers,reranker-transformers",
+    "ENABLE_MODULES": "text2vec-transformers ,reranker-transformers",
     "TRANSFORMERS_INFERENCE_API": EMBEDDING_INFERENCE_URL,
     "RERANKER_INFERENCE_API": RERANKER_INFERENCE_URL,
 }
@@ -56,15 +69,30 @@ CHUNK_OVERLAP = 50
 CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
 # Embedding model
-#
-EMBEDDING_MODEL_NAME = "BAAI/bge-base-en-v1.5"
+SOURCE_PROPERTIES=['chunk_size' ,'chunk_overlap' ,'separators']
+EMBEDDING_MODEL_NAME = _get_local_model_path(
+    "models--BAAI--bge-base-en-v1.5",
+    "BAAI/bge-base-en-v1.5",
+)
 EMBEDDING_DEVICE = "cpu"
+VECTORIZER_CONFIG = Configure.Vectors.text2vec_transformers(
+    name="default",
+    source_properties=["chunk"],
+    vectorize_collection_name=False,
+    inference_url=EMBEDDING_INFERENCE_URL,
+)
+
 
 #  Reranker model settings
-RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+RERANKER_MODEL_NAME = _get_local_model_path(
+    "models--cross-encoder--ms-marco-MiniLM-L-6-v2",
+    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+)
 RERANKER_DEVICE = "cpu"
+RERANKER_CONFIG = Configure.Reranker.transformers()
 
-#  Retrieval & search defaults
+
+#   search defaults
 DEFAULT_TOP_K = 5
 DEFAULT_HYBRID_ALPHA = 0.5
 
@@ -76,8 +104,7 @@ FLASK_DEBUG = False
 
 #collection property
 PROPERTIES = [
-    Property(name="source", data_type=DataType.TEXT),
+    Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
     Property(name="chunk", data_type=DataType.TEXT),
     Property(name="chunk_index", data_type=DataType.INT),
-    Property(name="main_vector", data_type=DataType.NUMBER, vector_index_type="hnsw", vector_index_config={"efConstruction": 128, "M": 64}),
 ]
