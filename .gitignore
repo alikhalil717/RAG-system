@@ -1,38 +1,24 @@
-# Large data files
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Notebook artifacts
+**/.ipynb_checkpoints/
+app/.ipynb_checkpoints/
+notebooks(experiences)/.ipynb_checkpoints/
+notebooks(experiences)/flask_project/.ipynb_checkpoints/
+notebooks(experiences)/__pycache__/
+notebooks(experiences)/flask_project/__pycache__/
+notebooks(experiences)/model_cache/
+
+# Data and cache files
 *.pkz
 *.joblib
-notebooks(experiences)/dataset/
-.models/
-.collections/
-__pycache__/
-*.ipynb_checkpoints/
-*.pyc
-*.safetensors
-*.bin
+**/.models/
+**/.collections/
 
-# Ignore large model and cache files
-.models/
-.collections/
-__pycache__/
-*.ipynb_checkpoints/
-*.pyc
-*.safetensors
-*.bin
-
-# Ignore large files
-.models/
-.collections/
-__pycache__/
-*.ipynb_checkpoints/
-*.pyc
-*.safetensors
-*.bin
-
-# Ignore large files
-.models/
-.collections/
-__pycache__/
-*.ipynb_checkpoints/
-*.pyc
+# Large model weights
 *.safetensors
 *.bin

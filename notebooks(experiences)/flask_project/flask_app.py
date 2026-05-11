@@ -13,6 +13,7 @@ log.setLevel(logging.ERROR)
 
 @app.route('/.well-known/ready', methods=['GET'])
 def readiness():
+    
     return "Ready", 200
 
 @app.route('/meta', methods=['GET'])
