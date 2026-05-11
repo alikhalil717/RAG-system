@@ -1,34 +1,50 @@
-# 1. Imports
-# os, fitz (PyMuPDF) – for PDF reading.
+
 import os
 import fitz
+import re
 from config import *
 from utils import print_object_properties
 from typing import List, Dict, Any
 from joblib import dump, load
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+
+_BOILERPLATE_PATTERNS = (
+    r"^archival copy\.",
+    r"^for current information, see the osu extension catalog:.*$",
+    r"^performance excellence$",
+    r"^in the wood products industry$",
+    r"^em\s*8718$",
+    r"^october 1998$",
+    r"^\$2\.50$",
+)
+
+
+def _clean_pdf_text(text: str) -> str:
+    cleaned_lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        normalized = re.sub(r"\s+", " ", stripped).lower()
+        if any(re.match(pattern, normalized) for pattern in _BOILERPLATE_PATTERNS):
+            continue
+        cleaned_lines.append(stripped)
+    return "\n".join(cleaned_lines)
+
+
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract text from a PDF file."""
     try:
         doc = fitz.open(pdf_path)
         text = ""
         for page in doc:
             text += page.get_text()
-        return text
+        return _clean_pdf_text(text)
     except Exception as e:
         print(f"Error extracting text from {pdf_path}: {e}")
         return ""
-# Function: get_all_pdfs() -> List[Dict[str, str]]
-# Use os.listdir(PDF_DATA_PATH).
-
-# Filter for files ending with '.pdf'.
-
-# For each PDF, call extract_text_from_pdf() to get the text.
-
-# Return a list of dictionaries: [{"source": "filename.pdf", "text": "the full document text"}, ...].
 
 def get_all_pdfs() -> List[str]:
-    """Get a list of all PDF file paths in the PDF_DATA_PATH directory."""
     pdf_files = []
     for root, _, files in os.walk(PDF_DATA_PATH):
         for file in files:
@@ -43,8 +59,8 @@ def chunk_text() -> List[Dict[str, Any]]:
         text = doc["text"]
         source = doc["source"]
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=CHUNK_SIZE,
-            chunk_overlap=CHUNK_OVERLAP,
+            chunk_size=min(CHUNK_SIZE, 350),
+            chunk_overlap=max(CHUNK_OVERLAP, 80),
             separators=CHUNK_SEPARATORS
         )
         chunks = text_splitter.create_documents([text])
@@ -56,10 +72,8 @@ def chunk_text() -> List[Dict[str, Any]]:
             })
     return all_chunks
 def save_chunks(chunks: List[Dict[str, Any]], path: str = CHUNKS_CACHE_PATH) -> None:
-    """Save the list of chunks to a file using joblib."""
     dump(chunks, path)
 def load_chunks(path: str = CHUNKS_CACHE_PATH) -> List[Dict[str, Any]]:
-    """Load the list of chunks from a file using joblib."""
     if os.path.exists(path):
         return load(path)
     else:
@@ -69,9 +83,8 @@ if __name__ == "__main__":
         print(f"Loading chunks from cache at {CHUNKS_CACHE_PATH}...")
         chunks = load_chunks()
         print(f"Loaded {len(chunks)} chunks from cache.")
-        print_object_properties(chunks[:2])  # Print properties of the first 2 chunks
+        print_object_properties(chunks[:2])  
     else:
-        print("Extracting and chunking PDF documents...")
         chunks = chunk_text()
         print(f"Total chunks created: {len(chunks)}")
         save_chunks(chunks)

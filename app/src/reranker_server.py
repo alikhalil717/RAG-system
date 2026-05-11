@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import logging
 from sentence_transformers import CrossEncoder
 from config import *
-from utils import generate_embedding
+from utils import generate_embedding, _fallback_embedding
 
 
 print("Loading reranker model")
@@ -11,12 +11,10 @@ reranker = CrossEncoder(
     RERANKER_MODEL_NAME,
     device=RERANKER_DEVICE,
     cache_folder=MODELS_CACHE_PATH,
-    local_files_only=True,
 )
 print("Reranker model loaded")
 app = Flask(__name__)
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
-# health check endpoint
 @app.route('/.well-known/ready', methods=['GET'])
 def readiness():
     return "Ready", 200
@@ -37,6 +35,18 @@ def vectorize():
         elif not isinstance(texts, list):
             return jsonify({'error': '"text" field must be a string or a list of strings'}), 400
         embeddings = generate_embedding(texts)
+        safe_embeddings = []
+        for txt, vec in zip(texts, embeddings):
+            try:
+                vec_list = list(vec)
+            except Exception:
+                vec_list = _fallback_embedding(txt)
+
+            if not any(abs(float(x)) > 1e-12 for x in vec_list):
+                vec_list = _fallback_embedding(txt)
+            safe_embeddings.append(vec_list)
+
+        embeddings = safe_embeddings
         if len(embeddings) == 1:
             embeddings = embeddings[0]
         return jsonify({'vectors': embeddings}), 200

@@ -1,7 +1,6 @@
 import os
 import sys
 from weaviate.classes.config import Configure, DataType, Property
-#  Base paths :
 
 if '__file__' in globals():
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,10 +20,8 @@ PDF_DATA_PATH = os.path.join(DATA_DIR, "pdfs")
 CHUNKS_DIR = os.path.join(BASE_DIR, "chunks")
 CHUNKS_CACHE_PATH = os.path.join(CHUNKS_DIR, "chunked_data.joblib")
 
-# Weaviate embedded persistence
 WEAVIATE_PERSISTENCE_PATH = os.path.join(BASE_DIR, ".collections")
 
-# Models cache directory
 MODELS_CACHE_PATH = os.path.join(BASE_DIR, "models", ".models")
 
 
@@ -40,21 +37,17 @@ def _get_local_model_path(model_dir_name: str, default_model_name: str) -> str:
             return os.path.join(snapshots_dir, snapshots[-1])
     return default_model_name
 
-# Create directories if they don't exist
 os.makedirs(PDF_DATA_PATH, exist_ok=True)
 os.makedirs(CHUNKS_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(WEAVIATE_PERSISTENCE_PATH), exist_ok=True)
 os.makedirs(os.path.dirname(MODELS_CACHE_PATH), exist_ok=True)
 
 
-# Weaviate collection & module settings
 COLLECTION_NAME = "collection"
 
-# Inference server endpoints (Flask app)
 EMBEDDING_INFERENCE_URL = "http://127.0.0.1:5000/"
 RERANKER_INFERENCE_URL = "http://127.0.0.1:5000/"
 
-# Weaviate embedded environment variables
 WEAVIATE_ENV_VARS = {
     "ENABLE_API_BASED_MODULES": "true",
     "ENABLE_MODULES": "text2vec-transformers ,reranker-transformers",
@@ -63,12 +56,10 @@ WEAVIATE_ENV_VARS = {
 }
 
 
-#  Chunking parameters
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
-# Embedding model
 SOURCE_PROPERTIES=['chunk_size' ,'chunk_overlap' ,'separators']
 EMBEDDING_MODEL_NAME = _get_local_model_path(
     "models--BAAI--bge-base-en-v1.5",
@@ -83,7 +74,6 @@ VECTORIZER_CONFIG = Configure.Vectors.text2vec_transformers(
 )
 
 
-#  Reranker model settings
 RERANKER_MODEL_NAME = _get_local_model_path(
     "models--cross-encoder--ms-marco-MiniLM-L-6-v2",
     "cross-encoder/ms-marco-MiniLM-L-6-v2",
@@ -92,19 +82,23 @@ RERANKER_DEVICE = "cpu"
 RERANKER_CONFIG = Configure.Reranker.transformers()
 
 
-#   search defaults
 DEFAULT_TOP_K = 5
 DEFAULT_HYBRID_ALPHA = 0.5
+RERANKER_PROPERTY = ["chunk"]
 
-#  Flask server settings
 
 FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
 FLASK_DEBUG = False
 
-#collection property
 PROPERTIES = [
     Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
     Property(name="chunk", data_type=DataType.TEXT),
     Property(name="chunk_index", data_type=DataType.INT),
 ]
+
+LLM_NAME="deepseek-chat"
+LLM_API_KEY= "sk-20879328d7ac495cb6384783488900ae"
+LLM_URL="https://api.deepseek.com"
+LLM_TEMPERATURE=0.7
+DEFAULT_MAX_TOKENS=1000
