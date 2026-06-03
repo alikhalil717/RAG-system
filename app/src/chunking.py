@@ -83,7 +83,7 @@ if __name__ == "__main__":
         print(f"Loading chunks from cache at {CHUNKS_CACHE_PATH}...")
         chunks = load_chunks()
         print(f"Loaded {len(chunks)} chunks from cache.")
-        print_object_properties(chunks[:2])  
+        print_object_properties(chunks[:2])
     else:
         chunks = chunk_text()
         print(f"Total chunks created: {len(chunks)}")
