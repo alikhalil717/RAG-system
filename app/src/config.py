@@ -1,6 +1,7 @@
 import os
 import sys
 from weaviate.classes.config import Configure, DataType, Property
+from dotenv import load_dotenv
 
 if '__file__' in globals():
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -14,6 +15,12 @@ else:
             BASE_DIR = parent
         else:
             BASE_DIR = os.getcwd()
+
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+try:
+    load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+except Exception:
+    pass
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
 PDF_DATA_PATH = os.path.join(DATA_DIR, "pdfs")
@@ -82,7 +89,7 @@ RERANKER_DEVICE = "cpu"
 RERANKER_CONFIG = Configure.Reranker.transformers()
 
 
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 20
 DEFAULT_HYBRID_ALPHA = 0.5
 RERANKER_PROPERTY = ["chunk"]
 
@@ -93,8 +100,13 @@ FLASK_DEBUG = False
 
 PROPERTIES = [
     Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="book", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="chapter", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="page", data_type=DataType.INT, skip_vectorization=True),
     Property(name="chunk", data_type=DataType.TEXT),
     Property(name="chunk_index", data_type=DataType.INT),
+    Property(name="has_code", data_type=DataType.BOOL , skip_vectorization=True),
+    Property(name="code_language", data_type=DataType.TEXT, skip_vectorization=True),
 ]
 
 LLM_NAME="deepseek-chat"
@@ -102,3 +114,10 @@ LLM_API_KEY= "sk-20879328d7ac495cb6384783488900ae"
 LLM_URL="https://api.deepseek.com"
 LLM_TEMPERATURE=0.7
 DEFAULT_MAX_TOKENS=1000
+
+
+
+
+
+
+

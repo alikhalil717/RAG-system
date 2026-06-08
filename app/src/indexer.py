@@ -55,10 +55,13 @@ def create_collection():
 
 def create_weaviate_client():
     with suppress_weaviate_logs():
-        client = weaviate.connect_to_embedded(
-            persistence_data_path =WEAVIATE_PERSISTENCE_PATH,
-            environment_variables =WEAVIATE_ENV_VARS
-        )
+        try:
+            client = weaviate.connect_to_embedded(
+                persistence_data_path=WEAVIATE_PERSISTENCE_PATH,
+                environment_variables=WEAVIATE_ENV_VARS
+            )
+        except Exception:
+            client = weaviate.connect_to_local(port=8079, grpc_port=50050)
     return client
 
 if __name__ == "__main__":

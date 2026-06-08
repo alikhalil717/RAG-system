@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import requests
 
 from config import COLLECTION_NAME, FLASK_PORT
-from connect_to_llm import answer_with_rag
+from connect_to_llm import answer_with_rag, rewrite_query_for_retrieval
 from indexer import create_collection, create_weaviate_client
 from search import hybrid_search
 from utils import kill_processes_on_port
@@ -95,7 +95,8 @@ def run_runtime(rebuild_index: bool = False, kill_existing_reranker: bool = True
 def retrieve_chunks(runtime: AppRuntime, query: str, top_k: int = 5) -> List[Dict]:
 	if not runtime.ready or runtime.collection is None:
 		raise RuntimeError("App is not running. Call run_app() first.")
-	return hybrid_search(query, runtime.collection, top_k=top_k, rerank_query=query)
+	search_query = rewrite_query_for_retrieval(query)
+	return hybrid_search(search_query, runtime.collection, top_k=top_k, rerank_query=search_query)
 
 
 def answer_query(runtime: AppRuntime, query: str, top_k: int = 5, session_id: str = "default") -> str:
@@ -136,4 +137,3 @@ def stop_runtime(runtime: AppRuntime) -> None:
 
 	kill_processes_on_port(FLASK_PORT, force=False, timeout=2.0)
 	runtime.ready = False
-
