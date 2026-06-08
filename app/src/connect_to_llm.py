@@ -1,4 +1,5 @@
 from typing import List, Dict
+import threading
 
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -14,6 +15,7 @@ llm = ChatOpenAI(
 )
 
 store: Dict[str, ChatMessageHistory] = {}
+_store_lock = threading.Lock()
 
 
 def connect_to_llm() -> ChatOpenAI:
@@ -21,9 +23,20 @@ def connect_to_llm() -> ChatOpenAI:
 
 
 def get_session_history(session_id: str) -> ChatMessageHistory:
-    if session_id not in store:
-        store[session_id] = ChatMessageHistory()
-    return store[session_id]
+    with _store_lock:
+        if session_id not in store:
+            store[session_id] = ChatMessageHistory()
+        return store[session_id]
+
+
+def delete_session(session_id: str) -> None:
+    with _store_lock:
+        store.pop(session_id, None)
+
+
+def list_sessions() -> List[str]:
+    with _store_lock:
+        return list(store.keys())
 
 
 def format_chunks_into_context(chunks: List[Dict]) -> str:
@@ -73,7 +86,7 @@ _REWRITE_SYSTEM_PROMPT = (
 
 
 def rewrite_query_for_retrieval(query: str) -> str:
-   
+
     try:
         messages = [
             SystemMessage(content=_REWRITE_SYSTEM_PROMPT),

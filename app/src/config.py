@@ -98,6 +98,9 @@ FLASK_HOST = "0.0.0.0"
 FLASK_PORT = 5000
 FLASK_DEBUG = False
 
+WEB_HOST = "0.0.0.0"
+WEB_PORT = 8080
+
 PROPERTIES = [
     Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
     Property(name="book", data_type=DataType.TEXT, skip_vectorization=True),
@@ -109,7 +112,7 @@ PROPERTIES = [
     Property(name="code_language", data_type=DataType.TEXT, skip_vectorization=True),
 ]
 
-LLM_NAME="deepseek-chat"
+LLM_NAME="deepseek-coder"
 LLM_API_KEY= "sk-20879328d7ac495cb6384783488900ae"
 LLM_URL="https://api.deepseek.com"
 LLM_TEMPERATURE=0.7
