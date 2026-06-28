@@ -108,7 +108,7 @@ PROPERTIES = [
     Property(name="page", data_type=DataType.INT, skip_vectorization=True),
     Property(name="chunk", data_type=DataType.TEXT),
     Property(name="chunk_index", data_type=DataType.INT),
-    Property(name="has_code", data_type=DataType.BOOL , skip_vectorization=True),
+    Property(name="has_code", data_type=DataType.BOOL, skip_vectorization=True),
     Property(name="code_language", data_type=DataType.TEXT, skip_vectorization=True),
 ]
 

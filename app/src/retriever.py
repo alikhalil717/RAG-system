@@ -10,9 +10,9 @@ from typing import Dict, List, Optional
 import requests
 
 from config import COLLECTION_NAME, FLASK_PORT
-from connect_to_llm import answer_with_rag, rewrite_query_for_retrieval
+from connect_to_llm import answer_with_rag, decompose_query
 from indexer import create_collection, create_weaviate_client
-from search import hybrid_search
+from search import hybrid_search, multi_query_search, expand_chunks
 from utils import kill_processes_on_port
 
 
@@ -92,15 +92,57 @@ def run_runtime(rebuild_index: bool = False, kill_existing_reranker: bool = True
 	return runtime
 
 
-def retrieve_chunks(runtime: AppRuntime, query: str, top_k: int = 5) -> List[Dict]:
-	if not runtime.ready or runtime.collection is None:
-		raise RuntimeError("App is not running. Call run_app() first.")
-	search_query = rewrite_query_for_retrieval(query)
-	return hybrid_search(search_query, runtime.collection, top_k=top_k, rerank_query=search_query)
+def retrieve_chunks(runtime: AppRuntime, query: str, top_k: int = 5, agentic: bool = True, expand_window: int = 5) -> List[Dict]:
+
+    if not runtime.ready or runtime.collection is None:
+        raise RuntimeError("App is not running. Call run_app() first.")
+
+    if agentic:
+        sub_queries = decompose_query(query)
 
 
-def answer_query(runtime: AppRuntime, query: str, top_k: int = 5, session_id: str = "default") -> str:
-	chunks = retrieve_chunks(runtime, query=query, top_k=top_k)
+        raw_query = query[:].strip()
+
+        m = re.search(
+            r"(File:|cmd/|\.go\b|package\s+\w+\b|import\b|func\b|\w+\.\w+)",
+            query,
+        )
+        if m:
+            start = max(0, m.start() - 10)
+            short_query = query[start:start + 120].strip()
+        else:
+            short_query = None
+
+        all_queries = [raw_query]
+        if short_query and short_query != raw_query:
+            all_queries.append(short_query)
+        all_queries.extend(sub_queries)
+
+        print(f"[retrieve] raw_query={raw_query!r}")
+        fused = multi_query_search(
+            all_queries,
+            runtime.collection,
+            top_k_per_query=max(top_k, 5),
+            final_top_k=top_k * 2,
+        )
+
+        if expand_window > 0 and runtime.collection is not None:
+            expanded = expand_chunks(
+                runtime.collection,
+                fused,
+                window=expand_window,
+                max_chunks=top_k * 3,
+            )
+            print(f"[retrieve] {len(fused)} anchors → {len(expanded)} chunks after expand")
+            return expanded
+
+        return fused
+    else:
+        return hybrid_search(query, runtime.collection, top_k=top_k, rerank_query=query)
+
+
+def answer_query(runtime: AppRuntime, query: str, top_k: int = 5, session_id: str = "default", expand_window: int = 5) -> str:
+	chunks = retrieve_chunks(runtime, query=query, top_k=top_k, expand_window=expand_window)
 	with warnings.catch_warnings():
 		warnings.filterwarnings(
 			"ignore",

@@ -25,16 +25,16 @@ def run_app(rebuild_index: bool = False, kill_existing_reranker: bool = True) ->
 	print("App is ready for user query")
 
 
-def get_answer(query: str, top_k: int = 5, session_id: str = "default") -> str:
+def get_answer(query: str, top_k: int = 60, session_id: str = "default", expand_window: int = 8) -> str:
 	if _runtime is None or not _runtime.ready:
 		raise RuntimeError("App is not running. Call run_app() first.")
-	return answer_query(_runtime, query=query, top_k=top_k, session_id=session_id)
+	return answer_query(_runtime, query=query, top_k=top_k, session_id=session_id, expand_window=expand_window)
 
 
-def get_chunks(query: str, top_k: int = 5) -> list[dict]:
+def get_chunks(query: str, top_k: int = 60, expand_window: int = 8) -> list[dict]:
 	if _runtime is None or not _runtime.ready:
 		raise RuntimeError("App is not running. Call run_app() first.")
-	return retrieve_chunks(_runtime, query=query, top_k=top_k)
+	return retrieve_chunks(_runtime, query=query, top_k=top_k, expand_window=expand_window)
 
 
 def close_app() -> None:

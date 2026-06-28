@@ -36,7 +36,7 @@ def api_query():
     data = request.get_json(force=True)
     query = data.get("query", "").strip()
     session_id = data.get("session_id", "default")
-    top_k = int(data.get("top_k", 50))
+    top_k = int(data.get("top_k", 100))
 
     if not query:
         return jsonify({"error": "Missing 'query' field"}), 400
