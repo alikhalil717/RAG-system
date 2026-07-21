@@ -3,7 +3,7 @@ import fitz
 import re
 from config import *
 from utils import print_object_properties
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 from joblib import dump, load
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -34,6 +34,158 @@ _CODE_LANGUAGE_HINTS = {
     "rust": (r"\bfn\s+\w+\s*\(|let\s+mut\s+\w+",),
     "sql": (r"\b(SELECT|INSERT|UPDATE|DELETE|CREATE TABLE)\s",),
 }
+
+
+def _protect_code_runs(text: str) -> str:
+    """Replace newlines inside consecutive [CODE]...[/CODE] lines with spaces.
+
+    Prevents RecursiveCharacterTextSplitter from splitting code snippets across
+    multiple chunks. Since code lines are individually wrapped in
+    [CODE]...[/CODE] markers, a run of N code lines looks like:
+
+        [CODE]line1[/CODE]\\n[CODE]line2[/CODE]\\n...
+
+    The splitter's "\\n" separator would split between lines. By replacing
+    those internal newlines with spaces, the splitter treats the entire run
+    as one "word" and won't split inside it. After splitting, restore_lines()
+    reverses this transformation.
+
+    A run is defined as two or more consecutive [CODE]...[/CODE] lines.
+    """
+    # Match two or more consecutive [CODE]...[/CODE] lines (with optional \n between)
+    pattern = re.compile(
+        r'(\[CODE\].*?\[/CODE\])\n(?=\[CODE\])',
+        re.DOTALL,
+    )
+    return pattern.sub(r'\1 ', text)
+
+
+def _restore_code_lines(text: str) -> str:
+    """Restore newlines that were replaced by _protect_code_runs.
+
+    Reverse of _protect_code_runs: changes space-separator between
+    consecutive [/CODE] and [CODE] back to newlines.
+    """
+    return re.sub(
+        r'(\[/CODE\]) (\[CODE\])',
+        r'\1\n\2',
+        text,
+    )
+
+
+def _merge_incomplete_code_chunks(
+    chunks: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Post-processing: merge chunks that contain incomplete code markers.
+
+    After the text splitter runs (even with protection), a few edge cases
+    can still produce chunks with unbalanced [CODE]/[/CODE] counts:
+    - The splitter splits at ". " or " " inside a code line
+    - Very long code runs that exceed chunk_size and get split by character
+
+    This pass walks all chunks, merges any consecutive chunks whose
+    [CODE]/[/CODE] counts aren't balanced, and returns the deduplicated list.
+
+    Merged chunks may exceed CHUNK_SIZE — this is intentional, as code
+    fidelity is more important than chunk size for programming-book RAG.
+    """
+    if not chunks:
+        return chunks
+
+    merged: List[Dict[str, Any]] = []
+    buffer: Optional[Dict[str, Any]] = None
+
+    for chunk in chunks:
+        text = chunk.get("chunk", "")
+
+        if buffer is not None:
+            # Merge with buffered chunk
+            buf_text = buffer.get("chunk", "")
+            buffer["chunk"] = buf_text + "\n" + text
+
+            # Check if code is now balanced
+            open_count = buffer["chunk"].count("[CODE]")
+            close_count = buffer["chunk"].count("[/CODE]")
+
+            if open_count == close_count:
+                merged.append(buffer)
+                buffer = None
+            # else: keep buffering — code is still incomplete
+        else:
+            open_count = text.count("[CODE]")
+            close_count = text.count("[/CODE]")
+
+            if open_count != close_count:
+                # Code snippet was cut — start buffering
+                buffer = dict(chunk)
+            else:
+                merged.append(dict(chunk))
+
+    # Append any remaining buffered chunk (unlikely but safe)
+    if buffer is not None:
+        merged.append(buffer)
+
+    if len(merged) != len(chunks):
+        print(
+            f"[merge_code] {len(chunks)} chunks → {len(merged)} "
+            f"after merging incomplete code fragments "
+            f"({len(chunks) - len(merged)} merged away)"
+        )
+
+    return merged
+
+
+# ==================================================================================== #
+# NEW: strategy-specific patterns and constants
+# ==================================================================================== #
+
+# Matches the book's "File: cmd/api/movies.go" captions, which precede almost every
+# code listing and are the single strongest signal in the corpus for tracking which
+# file a piece of code belongs to and how it evolves across chapters.
+_FILE_PATH_PATTERN = re.compile(r"File:\s*([A-Za-z0-9_\-./$]+)")
+
+# Matches the book's chapter/subchapter headings, e.g.:
+#   "Chapter 2.1.\nProject Setup and Skeleton Structure"
+#   "Chapter 2.\nGetting Started"
+# Subchapters (2.1, 2.2, ...) are the real topical unit in this book, so we capture
+# the minor number separately and expose it as a sortable/filterable chapter_number.
+_CHAPTER_PATTERN = re.compile(
+    r"Chapter\s+(\d{1,2})(?:\.(\d{1,2}))?\.\s*\n?\s*([A-Z][A-Za-z0-9 ,\-'’&]{2,90})"
+)
+
+# Go symbol extraction — used to build the `code_identifiers` field so that BM25 can
+# match exact function/type/package names even when the embedding model blurs them.
+_GO_FUNC_PATTERN = re.compile(r"func\s+(?:\([^)]*\)\s+)?(\w+)\s*\(")
+_GO_TYPE_PATTERN = re.compile(r"\btype\s+(\w+)\s+(?:struct|interface)\b")
+_GO_PACKAGE_LINE_PATTERN = re.compile(r"^\s*package\s+(\w+)", re.MULTILINE)
+
+# HTTP method + path detector. Reused for both code blocks (route registration lines
+# like `router.HandlerFunc(http.MethodGet, "/v1/movies/:id", ...)` won't match this,
+# but flattened endpoint tables and curl examples will) and for table detection.
+_HTTP_ROUTE_PATTERN = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|OPTIONS)\s+(/[\w\-/:]*)")
+
+# First-line keywords that reliably identify the book's reference tables (Method/URL
+# tables, Go-type<->JSON-type mapping tables, settings tables, etc.).
+_TABLE_HEADER_KEYWORDS = (
+    "Method URL Pattern",
+    "Go type",
+    "JSON type",
+    "PostgreSQL type",
+    "Signal Description",
+    "Key Description",
+    "Level Description",
+)
+
+# The ellipsis-omission marker the book uses to indicate a code listing is a diff /
+# partial snippet rather than a complete file, e.g.:
+#   package main
+#   ... // Indicates that some existing code has been omitted.
+_ELLIPSIS_OMISSION_PATTERN = re.compile(r"^\s*\.\.\.\s*(//.*)?$", re.MULTILINE)
+
+# Ceiling above which a single code listing is split on top-level func/type
+# boundaries rather than left as one oversized chunk. Chosen to comfortably fit a
+# full handler + a bit of surrounding context without splitting mid-function.
+MAX_CODE_CHUNK_CHARS = 2200
 
 
 def _is_monospace_font(font_name: str) -> bool:
@@ -371,6 +523,7 @@ def extract_text_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
         print(f"Error extracting text from {pdf_path}: {e}")
         return []
 
+
 def get_all_pdfs() -> List[Dict[str, Any]]:
     pdf_files = []
     for root, _, files in os.walk(PDF_DATA_PATH):
@@ -380,82 +533,421 @@ def get_all_pdfs() -> List[Dict[str, Any]]:
                 pages = _merge_code_across_pages(pages)
                 pdf_files.append({"source": file, "pages": pages})
     return pdf_files
+
+
+# ==================================================================================== #
+# NEW: strategy-specific helper functions
+# ==================================================================================== #
+
+def _format_chapter(match: "re.Match") -> Tuple[str, float]:
+    """Turn a _CHAPTER_PATTERN match into (full chapter string, chapter_number).
+
+    "Chapter 2.1." + "Project Setup..." -> ("Chapter 2.1. Project Setup...", 2.1)
+    "Chapter 2."   + "Getting Started"  -> ("Chapter 2. Getting Started", 2.0)
+    """
+    major, minor, title = match.group(1), match.group(2), match.group(3).strip()
+    title = re.sub(r"\s+", " ", title)
+    if minor:
+        return f"Chapter {major}.{minor}. {title}", float(f"{major}.{minor}")
+    return f"Chapter {major}. {title}", float(major)
+
+
+def _is_terminal_block(content: str) -> bool:
+    """Distinguish a terminal/command-line example from real source code.
+
+    Both are typeset in a monospace font in the PDF, so the font-based [CODE]
+    detection upstream conflates them. We split them back apart here using the
+    book's consistent "$ " command-prompt convention plus raw HTTP response
+    lines, both of which never appear in actual Go/SQL/JSON code listings.
+    """
+    lines = [l for l in content.splitlines() if l.strip()]
+    if not lines:
+        return False
+    dollar_lines = sum(1 for l in lines if l.strip().startswith("$"))
+    http_resp_lines = sum(1 for l in lines if re.match(r"^HTTP/1\.\d\s+\d{3}", l.strip()))
+    first_is_command = lines[0].strip().startswith("$")
+    density = (dollar_lines + http_resp_lines) / len(lines)
+    return first_is_command or density >= 0.25
+
+
+def _is_table_like(text: str) -> bool:
+    """Detect the book's reference tables (endpoint tables, type-mapping tables, …).
+
+    PDF text extraction collapses column spacing to single spaces, so we can't
+    rely on whitespace-run column detection. Instead we look for either (a) a
+    run of multiple HTTP method/route lines — the highest-value table type for
+    retrieval — or (b) a first line matching one of the book's recurring table
+    headers. Tables that match neither heuristic fall back to normal prose
+    chunking rather than being lost; see the accompanying write-up for why a
+    fully general table parser isn't worth the brittleness here.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    lines = [l for l in stripped.splitlines() if l.strip()]
+    if len(lines) < 2:
+        return False
+
+    route_lines = sum(1 for l in lines if _HTTP_ROUTE_PATTERN.search(l))
+    if route_lines >= 2:
+        return True
+
+    first_line = lines[0].strip()
+    if any(first_line.startswith(kw) for kw in _TABLE_HEADER_KEYWORDS):
+        return True
+
+    return False
+
+
+def _is_full_file_snapshot(code_content: str) -> bool:
+    """Heuristic: is this code listing a *complete* file, or a diff/snippet?
+
+    A listing is treated as a full snapshot only if it contains no ellipsis
+    omission marker ("... // Indicates that some existing code has been
+    omitted."). For Go files specifically we also require the listing to
+    start with a `package` declaration, since diff snippets sometimes restate
+    `package main` at the top immediately followed by an omission marker.
+    """
+    stripped = code_content.strip()
+    if not stripped:
+        return False
+    first_line = stripped.splitlines()[0].strip()
+    has_ellipsis = bool(_ELLIPSIS_OMISSION_PATTERN.search(code_content))
+    if first_line.startswith("package "):
+        return not has_ellipsis
+    return not has_ellipsis
+
+
+def _extract_go_import_paths(code: str) -> List[str]:
+    imports: List[str] = []
+    block = re.search(r"import\s*\(([^)]*)\)", code, re.DOTALL)
+    if block:
+        for line in block.group(1).splitlines():
+            m = re.search(r'"([^"]+)"', line)
+            if m:
+                imports.append(m.group(1))
+    else:
+        for m in re.finditer(r'import\s+"([^"]+)"', code):
+            imports.append(m.group(1))
+    return imports
+
+
+def _extract_code_identifiers(code: str) -> str:
+    """Extract Go func/type/package/import names as a space-joined BM25-searchable
+    string. Deliberately kept as one flat text field rather than several
+    per-symbol-kind schema properties — a single book doesn't have enough volume
+    to justify the extra schema surface, and BM25 doesn't care which "kind" of
+    identifier it's matching against.
+    """
+    identifiers = set()
+    identifiers.update(_GO_FUNC_PATTERN.findall(code))
+    identifiers.update(_GO_TYPE_PATTERN.findall(code))
+    identifiers.update(_GO_PACKAGE_LINE_PATTERN.findall(code))
+    for path in _extract_go_import_paths(code):
+        identifiers.add(path)
+        identifiers.add(path.rsplit("/", 1)[-1])
+    identifiers.discard("")
+    return " ".join(sorted(identifiers))
+
+
+def _extract_http_routes(text: str) -> str:
+    routes = set()
+    for method, path in _HTTP_ROUTE_PATTERN.findall(text):
+        routes.add(f"{method} {path}")
+    return " | ".join(sorted(routes))
+
+
+def _last_sentence(text: str, max_chars: int = 220) -> str:
+    """Grab the tail of a prose chunk so it can be prepended to the code block
+    that immediately follows it. Code embeds poorly in isolation (identifier
+    soup, thin semantic signal); code + the sentence that introduced it
+    embeds noticeably better and gives BM25 a natural-language anchor too.
+    """
+    text = text.strip()
+    if not text:
+        return ""
+    sentences = re.split(r"(?<=[.!?:])\s+", text)
+    tail = sentences[-1].strip() if sentences else text
+    if len(tail) < 15 and len(sentences) > 1:
+        tail = " ".join(sentences[-2:]).strip()
+    return tail[-max_chars:]
+
+
+def _split_large_code_block(code_content: str, file_path: Optional[str]) -> List[str]:
+    """Split an oversized code listing on top-level func/type boundaries only.
+
+    Never splits mid-function or mid-statement. If no safe boundary is found
+    the block is returned intact (occasionally producing one large chunk is
+    preferable to corrupting the code).
+    """
+    if len(code_content) <= MAX_CODE_CHUNK_CHARS:
+        return [code_content]
+
+    boundary_pattern = re.compile(r"\n(?=\s*(?:func\s|type\s+\w+\s+(?:struct|interface)\b))")
+    pieces = [p for p in boundary_pattern.split(code_content) if p.strip()]
+
+    if len(pieces) <= 1:
+        return [code_content]
+
+    header = f"// File: {file_path}\n" if file_path else ""
+    parts = [pieces[0]] + [f"{header}{piece}" for piece in pieces[1:]]
+    return parts
+
+
+def _mark_latest_file_versions(chunks: List[Dict[str, Any]]) -> None:
+    """Post-pass: flag which chunks belong to the most recent showing of each
+    file, preferring the most recent *complete* (is_full_file_snapshot) showing
+    over the most recent diff/snippet showing. This is what lets a "give me the
+    full X.go" query bypass vector search entirely and fetch by (book,
+    file_path, is_latest_file_version) instead.
+    """
+    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for c in chunks:
+        fp = c.get("file_path")
+        if not fp:
+            continue
+        groups.setdefault((c["book"], fp), []).append(c)
+
+    for group in groups.values():
+        full_versions = [c for c in group if c.get("is_full_file_snapshot")]
+        pool = full_versions if full_versions else group
+        latest_version_index = max((c.get("file_version_index") or 0) for c in pool)
+        for c in group:
+            if c.get("file_version_index") == latest_version_index:
+                c["is_latest_file_version"] = True
+
+
+def _new_chunk(
+    *, source: str, book: str, chapter: Optional[str], page, chunk: str,
+    chunk_index: int, has_code: bool, code_language: str, content_type: str,
+    file_path: str = "", chapter_number: Optional[float] = None,
+    code_identifiers: str = "", http_route: str = "",
+    is_full_file_snapshot: bool = False, file_version_index: Optional[int] = None,
+    part_index: int = 1, part_total: int = 1,
+) -> Dict[str, Any]:
+    """Single place that assembles a chunk dict, so every branch of chunk_text()
+    populates exactly the same set of fields (avoids silently-missing keys)."""
+    return {
+        "source": source,
+
+        "book": book,
+
+        "chapter": chapter,
+
+        "page": _parse_page(page),
+
+        "chunk": chunk,
+
+        "chunk_index": chunk_index,
+
+        "has_code": has_code,
+
+        "code_language": code_language,
+
+        "content_type": content_type,
+        "file_path": file_path,
+        "chapter_number": chapter_number,
+        "code_identifiers": code_identifiers,
+        "http_route": http_route,
+        "is_full_file_snapshot": is_full_file_snapshot,
+        "file_version_index": file_version_index,
+        "part_index": part_index,
+        "part_total": part_total,
+        "is_latest_file_version": False,  # filled in by _mark_latest_file_versions()
+    }
+
+
 def chunk_text() -> List[Dict[str, Any]]:
+    """Chunk every PDF in PDF_DATA_PATH following the book-aware strategy:
+
+    - subchapter (e.g. "Chapter 2.1. ...") is the topical scope; chapter_number
+      is captured separately as a sortable float.
+    - `File: <path>` captions are tracked as running state so every code chunk
+      knows which file it belongs to, including across page boundaries.
+    - code, terminal examples, reference tables, "Additional Information"
+      asides and regular prose are each classified via `content_type` and
+      chunked differently — code/terminal/tables are never split by the
+      character-based splitter.
+    - the sentence introducing a code block is prepended to it, since code
+      embeds poorly in isolation.
+    - oversized code listings are split on func/type boundaries, never
+      mid-statement.
+    - a final pass marks which showing of each file is the most recent
+      (preferring full-file snapshots), enabling direct lookup for
+      "give me the full X.go" style queries without going through vector
+      search at all.
+    """
     documents = get_all_pdfs()
-    all_chunks = []
+    all_chunks: List[Dict[str, Any]] = []
+
+    # Keyed by (book, file_path) rather than just file_path, so this stays
+    # correct if the knowledge base ever grows beyond a single book.
+    file_version_counts: Dict[Tuple[str, str], int] = {}
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=min(CHUNK_SIZE, 350),
+        chunk_overlap=max(CHUNK_OVERLAP, 80),
+        separators=CHUNK_SEPARATORS,
+    )
+
     for doc in documents:
         source = doc["source"]
         book = os.path.splitext(source)[0]
         pages = doc.get("pages", [])
-        current_chapter = None
 
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=min(CHUNK_SIZE, 350),
-            chunk_overlap=max(CHUNK_OVERLAP, 80),
-            separators=CHUNK_SEPARATORS,
-        )
+        current_chapter: Optional[str] = None
+        current_chapter_number: Optional[float] = None
+        current_file_path: Optional[str] = None
+        fresh_caption_seen = False
+        in_additional_info = False
+        pending_explanation_tail = ""
 
-        # Overall chunk_index across all segments on this page
         global_chunk_idx = 0
 
         for page_info in pages:
             page_num = page_info.get("page")
             page_text = page_info.get("text", "")
 
-            chap_match = re.search(r"(?i)chapter\s+([0-9]+|[IVXLC]+)", page_text)
+            chap_match = _CHAPTER_PATTERN.search(page_text)
             if chap_match:
-                current_chapter = chap_match.group(0).strip()
+                current_chapter, current_chapter_number = _format_chapter(chap_match)
+                in_additional_info = False  # a new (sub)chapter closes the previous aside
 
-            # ---- Split page into code / non-code segments ----
-            segments = re.split(
-                r"(\[CODE\].*?\[/CODE\])",
-                page_text,
-                flags=re.DOTALL,
-            )
+            segments = re.split(r"(\[CODE\].*?\[/CODE\])", page_text, flags=re.DOTALL)
 
             for segment in segments:
                 if not segment.strip():
                     continue
 
-                # --- Code segment: ALWAYS preserve intact (never split code) ---
-                if segment.startswith("[CODE]") and segment.endswith("[/CODE]"):
-                    code_content = segment[len("[CODE]"):-len("[/CODE]")]
-                    code_lang = _detect_code_language(code_content)
+                is_code_segment = segment.startswith("[CODE]") and segment.endswith("[/CODE]")
 
-                    code_text = f"[CODE]\n{code_content.strip()}\n[/CODE]"
+                # ------------------------------------------------------------------ #
+                # CODE / TERMINAL segment — never split by the character splitter
+                # ------------------------------------------------------------------ #
+                if is_code_segment:
+                    code_content = segment[len("[CODE]"):-len("[/CODE]")].strip()
+                    if not code_content:
+                        continue
 
-                    all_chunks.append({
-                        "source": source,
-                        "book": book,
-                        "chapter": current_chapter,
-                        "page": _parse_page(page_num),
-                        "chunk": code_text,
-                        "chunk_index": global_chunk_idx,
-                        "has_code": True,
-                        "code_language": code_lang,
-                    })
-                    global_chunk_idx += 1
+                    if _is_terminal_block(code_content):
+                        content_type = "terminal"
+                        code_lang = ""
+                        has_code = False
+                        file_path_for_chunk = None
+                        file_version_index = None
+                        is_full_snapshot = False
+                        identifiers = ""
+                    else:
+                        content_type = "code"
+                        code_lang = _detect_code_language(code_content)
+                        has_code = True
+                        file_path_for_chunk = current_file_path or ""
 
-                # --- Non-code segment: split normally ---
-                else:
-                    sub_chunks = text_splitter.create_documents([segment])
-                    for sc in sub_chunks:
-                        content = sc.page_content
-                        has_code = "[CODE]" in content
-                        code_lang = _detect_code_language(content)
-                        if code_lang and not has_code:
-                            has_code = True
-                        all_chunks.append({
-                            "source": source,
-                            "book": book,
-                            "chapter": current_chapter,
-                            "page": _parse_page(page_num),
-                            "chunk": content,
-                            "chunk_index": global_chunk_idx,
-                            "has_code": has_code,
-                            "code_language": code_lang,
-                        })
+                        file_version_index = None
+                        is_full_snapshot = False
+                        if file_path_for_chunk:
+                            key = (book, file_path_for_chunk)
+                            if fresh_caption_seen:
+                                file_version_counts[key] = file_version_counts.get(key, 0) + 1
+                                fresh_caption_seen = False
+                            file_version_index = file_version_counts.get(key, 1)
+                            is_full_snapshot = _is_full_file_snapshot(code_content)
+
+                        identifiers = _extract_code_identifiers(code_content)
+
+                    http_route = _extract_http_routes(code_content)
+
+                    prefix = ""
+                    if content_type == "code" and pending_explanation_tail:
+                        prefix = f"{pending_explanation_tail}\n\n"
+
+                    parts = _split_large_code_block(
+                        code_content,
+                        file_path_for_chunk if content_type == "code" else None,
+                    )
+                    for part_idx, part_text in enumerate(parts, start=1):
+                        body = f"[CODE]\n{part_text.strip()}\n[/CODE]"
+                        full_text = f"{prefix}{body}" if part_idx == 1 else body
+
+                        all_chunks.append(_new_chunk(
+                            source=source, book=book, chapter=current_chapter,
+                            page=page_num, chunk=full_text, chunk_index=global_chunk_idx,
+                            has_code=has_code, code_language=code_lang,
+                            content_type=content_type,
+                            file_path=file_path_for_chunk or "",
+                            chapter_number=current_chapter_number,
+                            code_identifiers=identifiers, http_route=http_route,
+                            is_full_file_snapshot=is_full_snapshot,
+                            file_version_index=file_version_index,
+                            part_index=part_idx, part_total=len(parts),
+                        ))
                         global_chunk_idx += 1
+
+                    pending_explanation_tail = ""
+                    continue
+
+                # ------------------------------------------------------------------ #
+                # NON-CODE segment — scan for File: captions / "Additional
+                # Information" headings, then split into tables vs. prose
+                # ------------------------------------------------------------------ #
+                caption_matches = list(_FILE_PATH_PATTERN.finditer(segment))
+                if caption_matches:
+                    current_file_path = caption_matches[-1].group(1).rstrip(".,;:")
+                    fresh_caption_seen = True
+
+                if re.search(r"\bAdditional Information\b", segment):
+                    in_additional_info = True
+
+                for para in re.split(r"\n\s*\n", segment):
+                    if not para.strip():
+                        continue
+
+                    if _is_table_like(para):
+                        all_chunks.append(_new_chunk(
+                            source=source, book=book, chapter=current_chapter,
+                            page=page_num, chunk=para.strip(), chunk_index=global_chunk_idx,
+                            has_code=False, code_language="", content_type="table",
+                            chapter_number=current_chapter_number,
+                            http_route=_extract_http_routes(para),
+                        ))
+                        global_chunk_idx += 1
+                        pending_explanation_tail = ""
+                        continue
+
+                    content_type = "additional_info" if in_additional_info else "explanation"
+
+                    # Protect code blocks before splitting so code snippets
+                    # stay together in one chunk instead of being fragmented
+                    protected_para = _protect_code_runs(para)
+
+                    sub_chunks = text_splitter.create_documents([protected_para])
+                    for sc in sub_chunks:
+                        # Restore newlines that were replaced during protection
+                        content = _restore_code_lines(sc.page_content)
+                        if not content.strip():
+                            continue
+                        has_code_inline = "[CODE]" in content
+                        code_lang_inline = _detect_code_language(content)
+                        if code_lang_inline and not has_code_inline:
+                            has_code_inline = True
+
+                        all_chunks.append(_new_chunk(
+                            source=source, book=book, chapter=current_chapter,
+                            page=page_num, chunk=content, chunk_index=global_chunk_idx,
+                            has_code=has_code_inline, code_language=code_lang_inline,
+                            content_type=content_type,
+                            chapter_number=current_chapter_number,
+                            http_route=_extract_http_routes(content),
+                        ))
+                        global_chunk_idx += 1
+
+                    if sub_chunks:
+                        pending_explanation_tail = _last_sentence(sub_chunks[-1].page_content)
+
+    _mark_latest_file_versions(all_chunks)
+
+    # Final pass: merge any chunks that still have incomplete code markers
+    all_chunks = _merge_incomplete_code_chunks(all_chunks)
 
     return all_chunks
 
@@ -467,13 +959,19 @@ def _parse_page(page_val):
     if isinstance(page_val, (int, str)):
         return page_val
     return int(page_val)
+
+
 def save_chunks(chunks: List[Dict[str, Any]], path: str = CHUNKS_CACHE_PATH) -> None:
     dump(chunks, path, compress=3)
+
+
 def load_chunks(path: str = CHUNKS_CACHE_PATH) -> List[Dict[str, Any]]:
     if os.path.exists(path):
         return load(path)
     else:
         return []
+
+
 if __name__ == "__main__":
     if os.path.exists(CHUNKS_CACHE_PATH):
         print(f"Loading chunks from cache at {CHUNKS_CACHE_PATH}...")

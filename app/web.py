@@ -42,8 +42,10 @@ def api_query():
         return jsonify({"error": "Missing 'query' field"}), 400
 
     try:
-        answer = main.get_answer(query, top_k=top_k, session_id=session_id)
-        chunks = main.get_chunks(query, top_k=top_k)
+        answer = main.get_answer(query, top_k=top_k, session_id=session_id,
+                                 agentic=data.get("agentic", "full"))
+        chunks = main.get_chunks(query, top_k=top_k,
+                                 agentic=data.get("agentic", "full"))
         # Sanitise chunks for JSON (non-serialisable fields)
         safe_chunks = []
         for c in chunks:

@@ -1,5 +1,6 @@
 import os
 import sys
+from tokenize import Single
 from weaviate.classes.config import Configure, DataType, Property
 from dotenv import load_dotenv
 
@@ -110,13 +111,23 @@ PROPERTIES = [
     Property(name="chunk_index", data_type=DataType.INT),
     Property(name="has_code", data_type=DataType.BOOL, skip_vectorization=True),
     Property(name="code_language", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="content_type", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="file_path", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="chapter_number", data_type=DataType.NUMBER, skip_vectorization=True),
+    Property(name="code_identifiers", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="http_route", data_type=DataType.TEXT, skip_vectorization=True),
+    Property(name="is_full_file_snapshot", data_type=DataType.BOOL, skip_vectorization=True),
+    Property(name="file_version_index", data_type=DataType.INT, skip_vectorization=True),
+    Property(name="part_index", data_type=DataType.INT, skip_vectorization=True),
+    Property(name="part_total", data_type=DataType.INT, skip_vectorization=True),
+    Property(name="is_latest_file_version", data_type=DataType.BOOL, skip_vectorization=True),
 ]
 
 LLM_NAME="deepseek-coder"
 LLM_API_KEY= "sk-20879328d7ac495cb6384783488900ae"
 LLM_URL="https://api.deepseek.com"
-LLM_TEMPERATURE=0.7
-DEFAULT_MAX_TOKENS=1000
+LLM_TEMPERATURE=0.4
+DEFAULT_MAX_TOKENS=3000
 
 
 
