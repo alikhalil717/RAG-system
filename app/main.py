@@ -30,7 +30,7 @@ def get_answer(
     top_k: int = 60,
     session_id: str = "default",
     expand_window: int = 8,
-    agentic: str = "full",   # "full" | "legacy" | "off"
+    agentic: str = "full",
 ) -> str:
 
     if _runtime is None or not _runtime.ready:
@@ -49,7 +49,7 @@ def get_chunks(
     query: str,
     top_k: int = 60,
     expand_window: int = 8,
-    agentic: str = "full",   # "full" | "legacy" | "off"
+    agentic: str = "full",
 ) -> list[dict]:
     if _runtime is None or not _runtime.ready:
         raise RuntimeError("App is not running. Call run_app() first.")

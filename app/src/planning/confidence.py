@@ -41,7 +41,6 @@ class ConfidenceReport:
         }
 
 
-# ── Scoring Functions ─────────────────────────────────────────────────
 
 
 def _result_count_score(chunks: List[Dict[str, Any]]) -> float:
@@ -79,10 +78,9 @@ def _score_distribution_score(
         if ch:
             chapters.add(ch)
 
-    # More unique pages/chapters = wider match = higher confidence
-    # (within reason — too wide means noise)
-    page_diversity = min(len(pages) / 10, 1.0)      # 10+ unique pages = perfect
-    chapter_diversity = min(len(chapters) / 3, 1.0)  # 3+ chapters = perfect
+
+    page_diversity = min(len(pages) / 10, 1.0)
+    chapter_diversity = min(len(chapters) / 3, 1.0)
 
     return (page_diversity * 0.5 + chapter_diversity * 0.5)
 
@@ -97,9 +95,8 @@ def _entity_coverage_score(
 
     entities = analysis.entities.all_identifiers()
     if not entities:
-        return 0.6  # no entities extracted → neutral
+        return 0.6
 
-    # Count unique entities found across top chunks
     found: set[str] = set()
     top_chunks_text = " ".join(
         str(c.get("chunk", ""))[:500] for c in chunks[:15]
@@ -109,7 +106,6 @@ def _entity_coverage_score(
         if entity.lower() in top_chunks_text:
             found.add(entity.lower())
 
-    # Also check metadata fields
     for c in chunks[:15]:
         identifiers = str(c.get("code_identifiers", "")).lower()
         for entity in entities:

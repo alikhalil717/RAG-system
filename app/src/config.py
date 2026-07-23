@@ -51,10 +51,10 @@ os.makedirs(os.path.dirname(WEAVIATE_PERSISTENCE_PATH), exist_ok=True)
 os.makedirs(os.path.dirname(MODELS_CACHE_PATH), exist_ok=True)
 
 
-COLLECTION_NAME = "collection"
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "collection")
 
-EMBEDDING_INFERENCE_URL = "http://127.0.0.1:5000/"
-RERANKER_INFERENCE_URL = "http://127.0.0.1:5000/"
+EMBEDDING_INFERENCE_URL = os.getenv("EMBEDDING_INFERENCE_URL", "http://127.0.0.1:5000/")
+RERANKER_INFERENCE_URL = os.getenv("RERANKER_INFERENCE_URL", "http://127.0.0.1:5000/")
 
 WEAVIATE_ENV_VARS = {
     "ENABLE_API_BASED_MODULES": "true",
@@ -64,8 +64,8 @@ WEAVIATE_ENV_VARS = {
 }
 
 
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 50
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
 CHUNK_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
 SOURCE_PROPERTIES=['chunk_size' ,'chunk_overlap' ,'separators']
@@ -90,17 +90,17 @@ RERANKER_DEVICE = "cpu"
 RERANKER_CONFIG = Configure.Reranker.transformers()
 
 
-DEFAULT_TOP_K = 20
-DEFAULT_HYBRID_ALPHA = 0.5
+DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "20"))
+DEFAULT_HYBRID_ALPHA = float(os.getenv("DEFAULT_HYBRID_ALPHA", "0.5"))
 RERANKER_PROPERTY = ["chunk"]
 
 
-FLASK_HOST = "0.0.0.0"
-FLASK_PORT = 5000
-FLASK_DEBUG = False
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
 
-WEB_HOST = "0.0.0.0"
-WEB_PORT = 8080
+WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
+WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
 
 PROPERTIES = [
     Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
@@ -123,11 +123,13 @@ PROPERTIES = [
     Property(name="is_latest_file_version", data_type=DataType.BOOL, skip_vectorization=True),
 ]
 
-LLM_NAME="deepseek-coder"
-LLM_API_KEY= "sk-20879328d7ac495cb6384783488900ae"
-LLM_URL="https://api.deepseek.com"
-LLM_TEMPERATURE=0.4
-DEFAULT_MAX_TOKENS=3000
+LLM_NAME = os.getenv("LLM_NAME", "deepseek-coder")
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+if not LLM_API_KEY:
+    print("WARNING: LLM_API_KEY is not set. Add it to your .env file.")
+LLM_URL = os.getenv("LLM_URL", "https://api.deepseek.com")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.4"))
+DEFAULT_MAX_TOKENS = int(os.getenv("DEFAULT_MAX_TOKENS", "3000"))
 
 
 

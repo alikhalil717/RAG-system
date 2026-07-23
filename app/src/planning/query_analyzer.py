@@ -10,7 +10,6 @@ from typing import Dict, List, Optional
 from connect_to_llm import llm
 
 
-# ── Intent Categories ──────────────────────────────────────────────────
 
 
 class IntentCategory(str, Enum):
@@ -56,7 +55,6 @@ class ExtractedEntities:
         )
 
 
-# ── Query Analysis Result ──────────────────────────────────────────────
 
 
 @dataclass
@@ -65,15 +63,14 @@ class QueryAnalysis:
     original_query: str
     intent: IntentCategory = IntentCategory.UNKNOWN
     entities: ExtractedEntities = field(default_factory=ExtractedEntities)
-    concepts: List[str] = field(default_factory=list)        # expanded concepts
-    keywords: List[str] = field(default_factory=list)         # raw keywords
-    rewritten_query: str = ""                                 # cleaned query
-    sub_queries: List[str] = field(default_factory=list)      # angle queries
+    concepts: List[str] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=list)
+    rewritten_query: str = ""
+    sub_queries: List[str] = field(default_factory=list)
     is_code_query: bool = False
-    confidence: float = 1.0                                   # analysis confidence
+    confidence: float = 1.0
 
 
-# ── LLM Prompt Templates ────────────────────────────────────────────────
 
 
 _ANALYSIS_SYSTEM_PROMPT = (
@@ -106,10 +103,8 @@ _ANALYSIS_SYSTEM_PROMPT = (
 )
 
 
-# ── Rule-Based Entity Extraction ────────────────────────────────────────
 
 
-# Heuristic regex patterns for fast extraction without LLM
 _GO_FUNC_RE = re.compile(r"\bfunc\s+(?:\([^)]*\)\s+)?(\w+)\b")
 _GO_FILE_RE = re.compile(r"\b([\w/]+\.go)\b")
 _HTTP_METHOD_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b",
@@ -153,7 +148,6 @@ def analyze_query(query: str, use_llm: bool = True) -> QueryAnalysis:
             print(f"[query_analyzer] LLM analysis failed ({exc}), "
                   f"falling back to heuristic.")
 
-    # Fast heuristic path (Phase 1, always works)
     return _heuristic_analyze_query(query)
 
 
@@ -195,7 +189,6 @@ def _llm_analyze_query(query: str) -> QueryAnalysis:
     response = analyzer_llm.invoke(messages)
     raw = response.content.strip()
 
-    # Strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[-1] if "\n" in raw else raw
     if raw.endswith("```"):
@@ -242,7 +235,7 @@ def _llm_analyze_query(query: str) -> QueryAnalysis:
         rewritten_query=data.get("rewritten_query", query),
         sub_queries=sub_queries,
         is_code_query=is_code,
-        confidence=0.85,  # LLM-driven = higher confidence
+        confidence=0.85,
     )
 
 
@@ -353,7 +346,6 @@ def _expand_concepts_heuristic(
         if keyword.lower() in lower:
             expanded.extend(concepts[:4])  # limit expansion
 
-    # Add function names & symbols as concepts too
     for fn in entities.go_functions[:3]:
         if fn.lower() not in expanded:
             expanded.append(fn)
@@ -363,7 +355,6 @@ def _expand_concepts_heuristic(
 
 def _extract_keywords(query: str) -> List[str]:
     """Extract simple keywords from the query."""
-    # Remove common stop words and punctuation
     words = re.findall(r"\b[a-zA-Z][a-zA-Z0-9_.-]{2,}\b", query)
     stop = {"the", "and", "for", "how", "to", "do", "is", "in", "of",
             "a", "an", "it", "on", "can", "you", "what", "why", "does",
@@ -375,7 +366,6 @@ def _rewrite_query_heuristic(
     query: str, entities: ExtractedEntities
 ) -> str:
     """Rewrite the query for better retrieval without LLM."""
-    # If code entities exist, construct a code-focused query
     parts: List[str] = []
 
     if entities.go_functions:
@@ -398,9 +388,8 @@ def _generate_sub_queries(
     entities: ExtractedEntities,
     concepts: List[str],
 ) -> List[str]:
-    sub_queries: List[str] = [query[:300]]  # always include original
+    sub_queries: List[str] = [query[:300]]
 
-    # Entity-driven sub-queries
     if entities.go_functions:
         sub_queries.append(" ".join(entities.go_functions[:3]))
     if entities.go_files:
@@ -412,11 +401,9 @@ def _generate_sub_queries(
             " ".join(entities.http_methods[:1] + entities.api_routes[:1])
         )
 
-    # Concept-driven sub-queries
     if concepts:
         sub_queries.append(" ".join(concepts[:4]))
 
-    # Intent-driven sub-queries
     if intent == IntentCategory.API_ENDPOINT:
         sub_queries.append(f"{query} route handler endpoint")
     elif intent == IntentCategory.IMPLEMENTATION:

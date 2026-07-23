@@ -1,6 +1,8 @@
-# RAG Pipeline — Full Architecture Diagram
-
-````mermaid
+---
+config:
+  flowchart:
+    curve: cardinal
+---
 flowchart TB
     subgraph INGEST["📥 INGESTION"]
         direction TB
@@ -39,7 +41,7 @@ flowchart TB
 
         subgraph SIMPLE["mode: off"]
             direction TB
-            M1["hybrid_search()\nvector + BM25\nα=0.5 + cross-encoder rerank"]
+            M1["hybrid_search()\nvect... + BM25\nα=0.5 + cross-encoder rerank"]
         end
 
         subgraph AGENTIC["🧠 mode: full (agentic)"]
@@ -75,7 +77,7 @@ flowchart TB
 
     subgraph STRATEGIES["🗺️ 11 SEARCH STRATEGIES"]
         direction LR
-        S1["hybrid\nvector+BM25"]
+        S1["hybrid\nvect... + BM25"]
         S2["bm25\nkeyword"]
         S3["vector\nsemantic"]
         S4["metadata_filter\nproperty match"]
@@ -162,22 +164,3 @@ flowchart TB
     class RERANKER,R1,R2,R3,R4,R5,R6 reranker
     class INTERFACE,U1,U2,U3 interface
     class EXTERNAL,X1,X2,X3 external
-````
-
----
-
-## Pipeline Summary
-
-| Phase              | Module                 | Function                                                                                 |
-| ------------------ | ---------------------- | ---------------------------------------------------------------------------------------- |
-| **Ingestion**      | `chunking.py`          | PDF → font+pattern code detection → `[CODE]` markers → text split → metadata-rich chunks |
-| **Indexing**       | `indexer.py`           | Chunks → BGE embeddings → Weaviate collection (16 properties)                            |
-| **Runtime**        | `retriever.py`         | Spawn reranker Flask server → connect to Weaviate embedded                               |
-| **Query Analysis** | `query_analyzer.py`    | LLM classifies intent (10 categories) + extracts entities/concepts                       |
-| **Planning**       | `retrieval_planner.py` | LLM generates ordered `SearchSteps` per strategy                                         |
-| **Search**         | `search_strategies.py` | 11 strategy implementations (hybrid, BM25, vector, code_identifier, etc.)                |
-| **Fusion**         | `result_fusion.py`     | Weighted RRF (K=60) + content-hash dedup                                                 |
-| **Reranking**      | `reranker.py`          | 6-signal per-intent reranking (semantic, metadata, entity, intent, topic, code_density)  |
-| **Confidence**     | `confidence.py`        | 5-factor scoring + iterative retry (max 3 rounds)                                        |
-| **Generation**     | `connect_to_llm.py`    | Format chunks (code → markdown fences) → LLM via `SystemMessage`/`HumanMessage`          |
-| **Interface**      | `web.py` / `main.py`   | Flask REST API (:8080) + Python API + Jupyter notebook                                   |

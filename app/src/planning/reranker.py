@@ -9,18 +9,17 @@ from typing import Any, Dict, List, Optional
 from planning.query_analyzer import IntentCategory, QueryAnalysis
 
 
-# ── Configuration ──────────────────────────────────────────────────────
 
 
 @dataclass
 class RerankerConfig:
 
-    semantic_weight: float = 0.35       # cross-encoder score
-    metadata_weight: float = 0.20       # metadata overlap score
-    entity_weight: float = 0.15         # entity/identifier overlap
-    intent_weight: float = 0.15         # intent↔content_type match
-    topic_weight: float = 0.10          # concept↔chunk topic overlap
-    code_density_weight: float = 0.05   # code-heavy chunks for code queries
+    semantic_weight: float = 0.35
+    metadata_weight: float = 0.20
+    entity_weight: float = 0.15
+    intent_weight: float = 0.15
+    topic_weight: float = 0.10
+    code_density_weight: float = 0.05
 
     def to_dict(self) -> Dict[str, float]:
         return {
@@ -93,9 +92,7 @@ class RerankerConfig:
         return cls()
 
 
-# ── Signal Functions ───────────────────────────────────────────────────
 
-# Cache for cross-encoder calls to avoid redundant API requests
 _CROSS_ENCODER_CACHE: Dict[str, float] = {}
 _CROSS_ENCODER_URL = "http://127.0.0.1:5000/rerank"
 
@@ -128,7 +125,6 @@ def semantic_similarity_score(
                 _CROSS_ENCODER_CACHE[cache_key] = score
                 return score
     except Exception as exc:
-        # Reranker server may not be running; silently fall back
         pass
 
     return 0.5
@@ -142,7 +138,6 @@ def metadata_overlap_score(
     score = 0.0
     max_score = 0.0
 
-    # Code identifier overlap
     chunk_ids = set(
         (chunk.get("code_identifiers") or "").split()
     )
@@ -156,7 +151,6 @@ def metadata_overlap_score(
         score += overlap / max(len(query_ids), 1)
         max_score += 1.0
 
-    # File path match
     chunk_fp = chunk.get("file_path", "")
     for qf in analysis.entities.go_files:
         if qf in chunk_fp:
@@ -167,7 +161,6 @@ def metadata_overlap_score(
         if analysis.entities.go_files:
             max_score += 1.0
 
-    # HTTP route match
     chunk_route = chunk.get("http_route", "")
     for route in analysis.entities.api_routes:
         if route in chunk_route:
@@ -179,7 +172,7 @@ def metadata_overlap_score(
             max_score += 1.0
 
     if max_score == 0:
-        return 0.5  # neutral when no metadata to compare
+        return 0.5
     return score / max_score
 
 
@@ -194,7 +187,6 @@ def entity_overlap_score(
     if not entities:
         return 0.5
 
-    # Count how many entities appear in the chunk
     matches = sum(1 for e in entities if e.lower() in chunk_text)
     return min(matches / max(len(entities), 1), 1.0)
 
@@ -207,7 +199,6 @@ def intent_match_score(
     content_type = chunk.get("content_type", "")
     has_code = chunk.get("has_code", False)
 
-    # Preferred content types per intent
     _INTENT_CONTENT_MAP: Dict[IntentCategory, List[str]] = {
         IntentCategory.IMPLEMENTATION: ["code"],
         IntentCategory.API_ENDPOINT: ["code", "table"],
@@ -227,11 +218,10 @@ def intent_match_score(
 
     if content_type in preferred:
         return 1.0
-    # Partial match: has_code=True for code-seeking intents
     if has_code and "code" in preferred:
         return 0.6
 
-    return 0.2  # mismatch
+    return 0.2
 
 
 def topic_match_score(
@@ -260,17 +250,14 @@ def _code_density_score(chunk: Dict[str, Any]) -> float:
     if content_type == "code":
         return 1.0
     if has_code:
-        # Count [CODE] blocks
         code_blocks = text.count("[CODE]")
         total_chars = len(text)
         if total_chars > 0:
-            # Rough density: more code blocks per character = higher
             return min(code_blocks * 500 / total_chars, 1.0)
         return 0.5
     return 0.0
 
 
-# ── Main Reranking Function ────────────────────────────────────────────
 
 
 def rerank_intelligently(
@@ -284,7 +271,6 @@ def rerank_intelligently(
         return []
 
     if config is None:
-        # Auto-select best weights for this intent
         intent = analysis.intent if analysis else IntentCategory.UNKNOWN
         config = RerankerConfig.for_intent(intent)
 

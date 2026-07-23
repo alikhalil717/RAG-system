@@ -72,7 +72,6 @@ class RetrievalMetrics:
         )
 
 
-# ── Agentic Retriever ──────────────────────────────────────────────────
 
 
 @dataclass
@@ -114,17 +113,14 @@ class AgenticRetriever:
             if self.verbose:
                 print(f"\n[agentic] ── Iteration {iteration}/{self.max_iterations} ──")
 
-            # Build SearchRequests from plan steps
             requests = _plan_to_requests(plan, iteration)
             if not requests:
                 print("[agentic] No search steps to execute.")
                 break
 
-            # Execute all strategies
             round_results = execute_plan(self.collection, requests)
             all_search_results.extend(round_results)
 
-            # Fuse results
             round_chunks = fuse_results(
                 round_results,
                 final_top_k=top_k,
@@ -132,13 +128,11 @@ class AgenticRetriever:
             )
             all_chunks = _merge_accumulated(all_chunks, round_chunks)
 
-            # Rerank
             all_chunks = rerank_intelligently(
                 all_chunks, query, analysis
             )
             all_chunks = all_chunks[:top_k]
 
-            # Confidence check
             final_confidence = compute_confidence(
                 all_chunks, analysis, iteration=iteration,
             )
@@ -184,7 +178,6 @@ def _plan_to_requests(
     for step in plan.search_plan:
         weight = step.weight
         if iteration > 1:
-            # Reduce weight of primary strategy, boost others
             if step.strategy == StrategyType.HYBRID:
                 weight *= 0.7
             else:
@@ -258,7 +251,6 @@ def _adjust_plan_for_retry(
             ))
 
     if confidence.content_diversity_score < 0.4:
-        # Increase top_k for hybrid search to get more diverse results
         for step in new_steps:
             if step.strategy == StrategyType.HYBRID:
                 step.top_k = min(step.top_k + 10, 50)
@@ -277,7 +269,6 @@ def _adjust_plan_for_retry(
     return plan
 
 
-# ── Convenience Functions ─────────────────────────────────────────────
 
 
 def agentic_retrieve_chunks(

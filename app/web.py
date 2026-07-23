@@ -10,7 +10,6 @@ from pathlib import Path
 import flask
 from flask import Flask, request, jsonify, render_template
 
-# Ensure app/src is on sys.path (same trick as main.py)
 _SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -46,7 +45,6 @@ def api_query():
                                  agentic=data.get("agentic", "full"))
         chunks = main.get_chunks(query, top_k=top_k,
                                  agentic=data.get("agentic", "full"))
-        # Sanitise chunks for JSON (non-serialisable fields)
         safe_chunks = []
         for c in chunks:
             safe_chunks.append({

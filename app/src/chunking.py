@@ -37,22 +37,7 @@ _CODE_LANGUAGE_HINTS = {
 
 
 def _protect_code_runs(text: str) -> str:
-    """Replace newlines inside consecutive [CODE]...[/CODE] lines with spaces.
 
-    Prevents RecursiveCharacterTextSplitter from splitting code snippets across
-    multiple chunks. Since code lines are individually wrapped in
-    [CODE]...[/CODE] markers, a run of N code lines looks like:
-
-        [CODE]line1[/CODE]\\n[CODE]line2[/CODE]\\n...
-
-    The splitter's "\\n" separator would split between lines. By replacing
-    those internal newlines with spaces, the splitter treats the entire run
-    as one "word" and won't split inside it. After splitting, restore_lines()
-    reverses this transformation.
-
-    A run is defined as two or more consecutive [CODE]...[/CODE] lines.
-    """
-    # Match two or more consecutive [CODE]...[/CODE] lines (with optional \n between)
     pattern = re.compile(
         r'(\[CODE\].*?\[/CODE\])\n(?=\[CODE\])',
         re.DOTALL,
@@ -61,11 +46,7 @@ def _protect_code_runs(text: str) -> str:
 
 
 def _restore_code_lines(text: str) -> str:
-    """Restore newlines that were replaced by _protect_code_runs.
 
-    Reverse of _protect_code_runs: changes space-separator between
-    consecutive [/CODE] and [CODE] back to newlines.
-    """
     return re.sub(
         r'(\[/CODE\]) (\[CODE\])',
         r'\1\n\2',
@@ -76,19 +57,7 @@ def _restore_code_lines(text: str) -> str:
 def _merge_incomplete_code_chunks(
     chunks: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Post-processing: merge chunks that contain incomplete code markers.
 
-    After the text splitter runs (even with protection), a few edge cases
-    can still produce chunks with unbalanced [CODE]/[/CODE] counts:
-    - The splitter splits at ". " or " " inside a code line
-    - Very long code runs that exceed chunk_size and get split by character
-
-    This pass walks all chunks, merges any consecutive chunks whose
-    [CODE]/[/CODE] counts aren't balanced, and returns the deduplicated list.
-
-    Merged chunks may exceed CHUNK_SIZE — this is intentional, as code
-    fidelity is more important than chunk size for programming-book RAG.
-    """
     if not chunks:
         return chunks
 
@@ -99,29 +68,24 @@ def _merge_incomplete_code_chunks(
         text = chunk.get("chunk", "")
 
         if buffer is not None:
-            # Merge with buffered chunk
             buf_text = buffer.get("chunk", "")
             buffer["chunk"] = buf_text + "\n" + text
 
-            # Check if code is now balanced
             open_count = buffer["chunk"].count("[CODE]")
             close_count = buffer["chunk"].count("[/CODE]")
 
             if open_count == close_count:
                 merged.append(buffer)
                 buffer = None
-            # else: keep buffering — code is still incomplete
         else:
             open_count = text.count("[CODE]")
             close_count = text.count("[/CODE]")
 
             if open_count != close_count:
-                # Code snippet was cut — start buffering
                 buffer = dict(chunk)
             else:
                 merged.append(dict(chunk))
 
-    # Append any remaining buffered chunk (unlikely but safe)
     if buffer is not None:
         merged.append(buffer)
 
@@ -135,26 +99,12 @@ def _merge_incomplete_code_chunks(
     return merged
 
 
-# ==================================================================================== #
-# NEW: strategy-specific patterns and constants
-# ==================================================================================== #
-
-# Matches the book's "File: cmd/api/movies.go" captions, which precede almost every
-# code listing and are the single strongest signal in the corpus for tracking which
-# file a piece of code belongs to and how it evolves across chapters.
 _FILE_PATH_PATTERN = re.compile(r"File:\s*([A-Za-z0-9_\-./$]+)")
 
-# Matches the book's chapter/subchapter headings, e.g.:
-#   "Chapter 2.1.\nProject Setup and Skeleton Structure"
-#   "Chapter 2.\nGetting Started"
-# Subchapters (2.1, 2.2, ...) are the real topical unit in this book, so we capture
-# the minor number separately and expose it as a sortable/filterable chapter_number.
 _CHAPTER_PATTERN = re.compile(
     r"Chapter\s+(\d{1,2})(?:\.(\d{1,2}))?\.\s*\n?\s*([A-Z][A-Za-z0-9 ,\-'’&]{2,90})"
 )
 
-# Go symbol extraction — used to build the `code_identifiers` field so that BM25 can
-# match exact function/type/package names even when the embedding model blurs them.
 _GO_FUNC_PATTERN = re.compile(r"func\s+(?:\([^)]*\)\s+)?(\w+)\s*\(")
 _GO_TYPE_PATTERN = re.compile(r"\btype\s+(\w+)\s+(?:struct|interface)\b")
 _GO_PACKAGE_LINE_PATTERN = re.compile(r"^\s*package\s+(\w+)", re.MULTILINE)

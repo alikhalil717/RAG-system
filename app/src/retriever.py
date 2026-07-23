@@ -15,7 +15,6 @@ from indexer import create_collection, create_weaviate_client
 from search import hybrid_search, multi_query_search, expand_chunks
 from utils import kill_processes_on_port
 
-# ── Agentic retrieval imports (Phase 2) ────────────────────────────────
 try:
     from planning.agentic_retriever import AgenticRetriever
     from planning.query_analyzer import analyze_query
@@ -193,7 +192,7 @@ def _agentic_retrieve(
 	all_chunks: List[Dict] = []
 	final_confidence = None
 
-	for iteration in range(1, 4):	# MAX_ITERATIONS = 3
+	for iteration in range(1, 4):
 		print(f"\n[agentic] ── Iteration {iteration}/3 ──")
 
 		requests = []
@@ -320,8 +319,7 @@ def answer_query(
 			message=".*RunnableWithMessageHistory is deprecated.*",
 			category=Warning,
 		)
-		""" print the chunks for debugging """
-		print(f"[agentic] Retrieved chunks: {chunks}")
+
 		answer = answer_with_rag(query, chunks, session_id=session_id)
 
 	answer = re.sub(r"\s*\[[^\]]*chunk\s*\d+[^\]]*\]", "", str(answer), flags=re.IGNORECASE)

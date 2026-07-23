@@ -120,7 +120,7 @@ def multi_query_search(
     rerank_property = _normalize_rerank_property(rerank_properties)
     rrf_scores: Dict[str, float] = {}
     result_map: Dict[str, Dict[str, Any]] = {}
-    K = 60  # RRF constant
+    K = 60
 
     for q_idx, query in enumerate(queries):
         if not query.strip():

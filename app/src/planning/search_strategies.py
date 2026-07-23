@@ -12,7 +12,6 @@ from config import DEFAULT_TOP_K, DEFAULT_HYBRID_ALPHA, RERANKER_PROPERTY
 from planning.retrieval_planner import StrategyType
 
 
-# ── Data Classes ───────────────────────────────────────────────────────
 
 
 @dataclass
@@ -38,7 +37,6 @@ class SearchResult:
         return len(self.chunks)
 
 
-# ── Helper ─────────────────────────────────────────────────────────────
 
 
 def _as_properties(results) -> List[Dict[str, Any]]:
@@ -224,7 +222,7 @@ def search_code_identifier(
     results = collection.query.hybrid(
         query=request.query,
         limit=request.top_k,
-        alpha=0.2,  # bias toward BM25 for exact identifier matching
+        alpha=0.2,
         rerank=Rerank(query=request.query, prop="code_identifiers"),
     )
 

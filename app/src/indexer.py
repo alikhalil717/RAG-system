@@ -19,7 +19,6 @@ def create_index(collection : weaviate.Collection):
             except Exception:
                 vec = _fallback_embedding(chunk.get("chunk", ""))
 
-            # ensure non-zero vector
             if not any(abs(float(x)) > 1e-12 for x in vec):
                 vec = _fallback_embedding(chunk.get("chunk", ""))
 
@@ -33,22 +32,21 @@ def create_index(collection : weaviate.Collection):
 
 
 
-def create_collection():
-    client =create_weaviate_client()
-    if client.collections.exists(COLLECTION_NAME):
+def create_collection(rebuild: bool = False):
+    client = create_weaviate_client()
+    if rebuild and client.collections.exists(COLLECTION_NAME):
         client.collections.delete(COLLECTION_NAME)
     if not client.collections.exists(COLLECTION_NAME):
-        collection=client.collections.create(name=COLLECTION_NAME ,
-                                             vector_config =VECTORIZER_CONFIG ,
-                                             reranker_config =RERANKER_CONFIG ,
-                                             properties =PROPERTIES
+        collection = client.collections.create(
+            name=COLLECTION_NAME,
+            vectorizer_config=VECTORIZER_CONFIG,
+            reranker_config=RERANKER_CONFIG,
+            properties=PROPERTIES,
         )
-
-
-
-
-    else : collection=client.collections.get(COLLECTION_NAME)
-    create_index(collection)
+        create_index(collection)
+    else:
+        collection = client.collections.get(COLLECTION_NAME)
+        print(f"Collection '{COLLECTION_NAME}' already exists — skipping index.")
     client.close()
     return collection
 
@@ -78,14 +76,8 @@ if __name__ == "__main__":
         else:
             print(f"Collection {COLLECTION_NAME} does not exist")
         client.close()
-    elif args.rebuild:
-        print("Rebuilding collection...")
-        client = create_weaviate_client()
-        if client.collections.exists(COLLECTION_NAME):
-            client.collections.delete(COLLECTION_NAME)
-        client.close()
-        create_collection()
-        print("Rebuild complete.")
     else:
-        create_collection()
+        create_collection(rebuild=args.rebuild)
+        if args.rebuild:
+            print("Rebuild complete.")
 

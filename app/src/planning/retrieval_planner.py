@@ -11,7 +11,6 @@ from connect_to_llm import llm
 from planning.query_analyzer import IntentCategory, QueryAnalysis
 
 
-# ── Strategy Types ─────────────────────────────────────────────────────
 
 
 class StrategyType(str, Enum):
@@ -28,7 +27,6 @@ class StrategyType(str, Enum):
     HIERARCHICAL = "hierarchical"
 
 
-# ── Search Step ────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -52,7 +50,6 @@ class SearchStep:
         }
 
 
-# ── Retrieval Plan ─────────────────────────────────────────────────────
 
 
 @dataclass
@@ -79,7 +76,6 @@ class RetrievalPlan:
         }
 
 
-# ── LLM Prompt ─────────────────────────────────────────────────────────
 
 
 _PLANNER_SYSTEM_PROMPT = (
@@ -120,7 +116,6 @@ _PLANNER_SYSTEM_PROMPT = (
 )
 
 
-# ── Heuristic Plan Generation ──────────────────────────────────────────
 
 
 def _build_heuristic_plan(analysis: QueryAnalysis) -> RetrievalPlan:
@@ -154,7 +149,6 @@ def _build_heuristic_plan(analysis: QueryAnalysis) -> RetrievalPlan:
                 reason="Query contains Go code identifiers — exact match first",
             ))
 
-        # File search if file paths are present
         if entities.go_files:
             steps.append(SearchStep(
                 strategy=StrategyType.FILENAME,
@@ -180,7 +174,6 @@ def _build_heuristic_plan(analysis: QueryAnalysis) -> RetrievalPlan:
             ),
         ))
 
-    # 1c. Implementation & Debugging: add code-only symbol search
     if analysis.intent in (IntentCategory.IMPLEMENTATION,
                            IntentCategory.DEBUGGING,
                            IntentCategory.CODE_EVOLUTION):
@@ -198,7 +191,6 @@ def _build_heuristic_plan(analysis: QueryAnalysis) -> RetrievalPlan:
             ),
         ))
 
-    # 2. API endpoint search
     if entities.api_routes or entities.http_methods:
         route_query = " ".join(entities.api_routes[:2])
         steps.append(SearchStep(
@@ -210,9 +202,7 @@ def _build_heuristic_plan(analysis: QueryAnalysis) -> RetrievalPlan:
             reason="Query targets API endpoints — prioritize code chunks",
         ))
 
-    # 3. Intent-driven chapter filtering
     if analysis.intent == IntentCategory.CODE_EVOLUTION:
-        # Code evolution needs to track a file across chapters
         file_path = entities.go_files[0] if entities.go_files else None
         if file_path:
             steps.append(SearchStep(
