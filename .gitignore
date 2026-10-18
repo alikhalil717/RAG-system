@@ -22,3 +22,6 @@ notebooks(experiences)/model_cache/
 # Large model weights
 *.safetensors
 *.bin
+
+# Local environment files
+.env
